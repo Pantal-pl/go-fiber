@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"CRUD_API_FIBER/common"
+	"CRUD_API_FIBER/models"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -9,38 +10,35 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
-type createDTO struct {
-	Title        string    `json:"title" bson:"title"`
-	Author       string    `json:"author" bson:"author"`
-	CreationDate time.Time `json:"creationDate,omitempty" bson:"creationDate,omitempty"`
-	Description  string    `json:"description" bson:"description"`
-}
-
 func CreateTask(c *fiber.Ctx) error {
 
-	id := c.Params("id")
+	projectId := c.Params("id")
 
-	if id == "" {
+	if projectId == "" {
 		return c.Status(400).JSON(fiber.Map{"error": "project id is required"})
 	}
 
-	objectId, err := primitive.ObjectIDFromHex(id)
+	convertedProjectId, err := primitive.ObjectIDFromHex(projectId)
 
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid project id"})
 	}
 
-	task := new(createDTO)
+	task := new(models.Task)
 	err = c.BodyParser(task)
 
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid body"})
 	}
 
+	task.AssignedProject = projectId
 	task.CreationDate = time.Now()
-	coll := common.GetDbCollection("tasks")
+	collTasks := common.GetDbCollection("tasks")
 
-	result, err := coll.InsertOne(c.Context(), task)
+	insertedTaskResult, err := collTasks.InsertOne(c.Context(), task)
+
+	insertedID := insertedTaskResult.InsertedID.(primitive.ObjectID).Hex()
+	task.ID = insertedID
 
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{
@@ -49,15 +47,14 @@ func CreateTask(c *fiber.Ctx) error {
 		})
 	}
 
-	coll = common.GetDbCollection("projects")
+	collProjects := common.GetDbCollection("projects")
 
-	filter := bson.M{"_id": objectId}
-
+	filter := bson.M{"_id": convertedProjectId}
 	update := bson.M{
 		"$push": bson.M{"tasks": task},
 	}
 
-	_, err = coll.UpdateOne(c.Context(), filter, update)
+	_, err = collProjects.UpdateOne(c.Context(), filter, update)
 
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{
@@ -68,7 +65,7 @@ func CreateTask(c *fiber.Ctx) error {
 
 	return c.Status(200).JSON(fiber.Map{
 		"result": fiber.Map{
-			"insertedID": result.InsertedID,
+			"insertedID": insertedTaskResult.InsertedID,
 			"task":       task,
 		},
 	})

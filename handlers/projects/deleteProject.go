@@ -18,7 +18,7 @@ func DeleteProject(c *fiber.Ctx) error {
 		})
 	}
 
-	objectId, err := primitive.ObjectIDFromHex(id)
+	projectObjectId, err := primitive.ObjectIDFromHex(id)
 
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{
@@ -26,37 +26,38 @@ func DeleteProject(c *fiber.Ctx) error {
 		})
 	}
 
-	coll := common.GetDbCollection("projects")
+	collProjects := common.GetDbCollection("projects")
 
 	project := models.Project{}
 
-	err = coll.FindOneAndDelete(c.Context(), bson.M{"_id": objectId}).Decode(&project)
+	err = collProjects.FindOneAndDelete(c.Context(), bson.M{"_id": projectObjectId}).Decode(&project)
 
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{
-			"error":   "falied to delete a project",
+			"error":   "failed to delete a project",
 			"message": err.Error(),
 		})
 	}
+
+	collTasks := common.GetDbCollection("tasks")
+	var taskDeletionErrors []error
 
 	for _, v := range project.Tasks {
-		coll = common.GetDbCollection("tasks")
-		objectId, err = primitive.ObjectIDFromHex(v.ID)
+		taskObjectId, err := primitive.ObjectIDFromHex(v.ID)
 		if err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": "falied to delete project", "message": err.Error()})
+			taskDeletionErrors = append(taskDeletionErrors, err)
+			continue
 		}
-		_, err = coll.DeleteOne(c.Context(), bson.M{"_id": objectId})
+
+		_, err = collTasks.DeleteOne(c.Context(), bson.M{"_id": taskObjectId})
 
 		if err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": "falied to delete project", "message": err.Error()})
+			taskDeletionErrors = append(taskDeletionErrors, err)
 		}
 	}
 
-	if err != nil {
-		return c.Status(500).JSON(fiber.Map{
-			"error":   "falied to delete a project",
-			"message": err.Error(),
-		})
+	if len(taskDeletionErrors) > 0 {
+		return c.Status(500).JSON(fiber.Map{"error": "failed to delete tasks", "messages": taskDeletionErrors})
 	}
 
 	return c.Status(200).JSON(fiber.Map{
